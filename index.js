@@ -11,7 +11,9 @@ var snapShotDebug = debug('snapShot');
 
 var cli = commandLineArgs([
   {name: 'purge', alias: 'p', type: Boolean, defaultOption: false},
-  {name: 'snapShotTimerTag', alias: 's', type: String}
+  {name: 'snapShotTimerTag', alias: 's', type: String},
+  {name: 'throttle', alias: 't', type: Number, defaultValue: 125},
+  {name: 'region', alias: 'r', type: Number, defaultValue: 'us-east-1'}
 ]);
 
 AWS.config.update({
@@ -20,9 +22,12 @@ AWS.config.update({
   region: process.env.AWS_DEFAULT_REGION
 });
 
-var ec2 = new AWS.EC2({region: 'us-east-1'});
+var options = cli.parse();
+optionsDebug('options', options);
 
-function _purgeExpiredSnapshots(cb) {
+var ec2 = new AWS.EC2({region: options.region});
+
+function _purgeExpiredSnapshots(throttleRate, cb) {
   purgeDebug('Starting Purge');
 
   var params = {
@@ -48,11 +53,11 @@ function _purgeExpiredSnapshots(cb) {
             ec2.deleteSnapshot(param, function(err, data) {
               if (err) { return cb(err); }
               else {
-                console.log('Deleted Snapshot with ID: ', snapShot.SnapshotId);
+                purgeDebug('Deleted Snapshot with ID: ', snapShot.SnapshotId);
               }
             });
           }, timeout);
-          timeout = timeout + 125;//throttle the deletes so AWS doesn't error on over limit
+          timeout = timeout + throttleRate;//throttle the deletes so AWS doesn't error on over limit
         }
       });
     });
@@ -135,9 +140,6 @@ function _handleErrorAndExit(err) {
 // Main processing logic...
 
 function _start() {
-  var options = cli.parse();
-  optionsDebug('options', options);
-
   if (options.snapShotTimerTag) {
     _createSnapshots(options.snapShotTimerTag, function(err) {
       if (err) {return _handleError(err); }
@@ -145,7 +147,7 @@ function _start() {
   }
 
   if (options.purge) {
-    _purgeExpiredSnapshots(function(err) {
+    _purgeExpiredSnapshots(options.throttle, function(err) {
       if (err) {return _handleError(err); }
     });
   }
