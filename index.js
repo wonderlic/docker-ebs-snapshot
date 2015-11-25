@@ -9,6 +9,12 @@ AWS.config.update({
 var ec2 = new AWS.EC2();
 
 function _purgeExpiredSnapshots(cb) {
+  var params = {
+    DryRun: false,
+    Filters: [
+      {Name: 'tag-key', Values: ['PurgeAllow']}
+    ]
+  };
 
   ec2.describeSnapshots(params, function(err, data) {
     if (err) { return cb(err); }
@@ -37,7 +43,6 @@ function _purgeExpiredSnapshots(cb) {
       });
     });
   });
-
 }
 
 function _handleError(err) {
