@@ -1,1 +1,1 @@
-# docker-ebs-snapshot
+# wonderlic/ebs-snapshot
