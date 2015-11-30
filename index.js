@@ -65,8 +65,8 @@ function _purgeExpiredSnapshots(throttleRate, errorHandler) {
   });
 }
 
-function _createTag(resources, tagName, tagValue, errorHandler) {
-  tagDebug('Creating Tag');
+function _createTags(resources, tags, errorHandler) {
+  tagDebug('_createTags resources: %o, tags: %o', resources, tags);
 
   if (!_.isArray(resources)) {
     tagDebug('Converting to array');
@@ -75,28 +75,17 @@ function _createTag(resources, tagName, tagValue, errorHandler) {
     resources[0] = resourcesString;
   }
 
-  tagDebug('resources', resources);
-  tagDebug('tagName', tagName);
-  tagDebug('tagValue', tagValue);
-
   var params = {
     Resources: resources,
-    Tags: [
-      {
-        Key: tagName.toString(),
-        Value: tagValue.toString()
-      }
-    ],
+    Tags: tags,
     DryRun: false
   };
 
-  tagDebug('params', params);
+  tagDebug('params: %o', params);
 
-  ec2.createTags(params, function(err, tagData) {
-    if (err) {
-      return errorHandler(err);
-    }
-    tagDebug('tagData', tagData);
+  ec2.createTags(params, function(err, data) {
+    snapshotDebug('.createTags err: %o, data: %o', err, data);
+    if (err) { return errorHandler(err); }
   });
 }
 
@@ -127,22 +116,28 @@ function _createSnapshots(snapshotTag, purgeAfter, errorHandler) {
         Description: snapshotTag + ' - ' + modEpoch,
         DryRun: false
       };
-      snapshotDebug('volume tags', volume.Tags);
+      snapshotDebug('volume: %o', volume);
 
       ec2.createSnapshot(params, function(err, snapshot) {
+        snapshotDebug('ec2.createSnapshot err: %o, snapshot: %o', err, snapshot);
         if (err) { return errorHandler(err); }
 
-        snapshotDebug('snapshotData', snapshot);
         var volumeName = _getTagValue(volume.Tags, 'Name');
-        console.log('Created snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
 
+        var tags = [];
         if (volumeName) {
-          _createTag(snapshot.SnapshotId, 'Name', volumeName, errorHandler);
+          tags.push({Key: 'Name', Value: volumeName});
         }
         if (purgeAfter > 0) {
-          _createTag(snapshot.SnapshotId, 'PurgeAllow', 'true', errorHandler);
-          _createTag(snapshot.SnapshotId, 'PurgeAfterFE', purgeAfterFE, errorHandler);
+          tags.push({Key: 'PurgeAllow', Value: 'true'});
+          tags.push({Key: 'PurgeAfterFE', Value: purgeAfterFE.toString()});
         }
+
+        if (tags.length > 0) {
+          _createTags(snapshot.SnapshotId, tags, errorHandler);
+        }
+
+        console.log('Created snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
       });
     });
   });
@@ -152,7 +147,6 @@ function _getTagValue(tags, name) {
   for (var i = 0; i < tags.length; i++) {
     var tag = tags[i];
     if (tag.Key === name) {
-      snapshotDebug('found tag', tag);
       return tag.Value;
     }
   }
