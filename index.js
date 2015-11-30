@@ -12,9 +12,11 @@ var snapshotDebug = debug('snapshot');
 var cli = commandLineArgs([
   {name: 'purge', alias: 'p', type: Boolean, defaultOption: false},
   {name: 'snapshotTimerTag', alias: 's', type: String},
-  {name: 'throttle', alias: 't', type: Number, defaultValue: 125},
-  {name: 'region', alias: 'r', type: Number, defaultValue: 'us-east-1'}
+  {name: 'throttle', alias: 't', type: Number, defaultValue: 125}
 ]);
+
+var options = cli.parse();
+optionsDebug('options', options);
 
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -22,10 +24,7 @@ AWS.config.update({
   region: process.env.AWS_DEFAULT_REGION
 });
 
-var options = cli.parse();
-optionsDebug('options', options);
-
-var ec2 = new AWS.EC2({region: options.region});
+var ec2 = new AWS.EC2();
 
 function _purgeExpiredSnapshots(throttleRate, cb) {
   purgeDebug('Starting Purge');
