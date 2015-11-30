@@ -16,7 +16,7 @@ var cli = commandLineArgs([
 ]);
 
 var options = cli.parse();
-optionsDebug('options', options);
+optionsDebug('options %o', options);
 
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -51,9 +51,8 @@ function _purgeExpiredSnapshots(throttleRate, cb) {
 
             ec2.deleteSnapshot(param, function(err, data) {
               if (err) { return cb(err); }
-              else {
-                purgeDebug('Deleted Snapshot with ID: ', snapshot.SnapshotId);
-              }
+
+              purgeDebug('Deleted Snapshot with ID: %s', snapshot.SnapshotId);
             });
           }, timeout);
           timeout = timeout + throttleRate;//throttle the deletes so AWS doesn't error on over limit
