@@ -12,7 +12,7 @@ var snapshotDebug = debug('snapshot');
 var cli = commandLineArgs([
   {name: 'purge', alias: 'p', type: Boolean, defaultOption: false},
   {name: 'snapshotTimerTag', alias: 's', type: String},
-  {name: 'throttle', alias: 't', type: Number, defaultValue: 125}
+  {name: 'throttle', alias: 't', type: Number, defaultValue: 250}
 ]);
 
 var options = cli.parse();
