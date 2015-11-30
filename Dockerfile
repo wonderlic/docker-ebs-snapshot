@@ -6,4 +6,4 @@ COPY index.js /app/index.js
 
 RUN ln -s /usr/bin/node /app/ebs-snapshot
 
-CMD ["/app/ebs-snapshot", "/app/index.js"]
+ENTRYPOINT ["/app/ebs-snapshot", "/app/index.js"]
