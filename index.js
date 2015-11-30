@@ -7,11 +7,11 @@ var debug = require('debug');
 var optionsDebug = debug('options');
 var purgeDebug = debug('purge');
 var tagDebug = debug('tag');
-var snapShotDebug = debug('snapShot');
+var snapshotDebug = debug('snapshot');
 
 var cli = commandLineArgs([
   {name: 'purge', alias: 'p', type: Boolean, defaultOption: false},
-  {name: 'snapShotTimerTag', alias: 's', type: String},
+  {name: 'snapshotTimerTag', alias: 's', type: String},
   {name: 'throttle', alias: 't', type: Number, defaultValue: 125},
   {name: 'region', alias: 'r', type: Number, defaultValue: 'us-east-1'}
 ]);
@@ -41,19 +41,19 @@ function _purgeExpiredSnapshots(throttleRate, cb) {
     if (err) { return cb(err); }
     var modEpoch = (new Date()).getTime() / 1000;
     var timeout = 0;
-    _.each(data.Snapshots, function(snapShot) {
-      _.each(snapShot.Tags, function(tag) {
+    _.each(data.Snapshots, function(snapshot) {
+      _.each(snapshot.Tags, function(tag) {
         if (tag.Key === 'PurgeAfterFE' && tag.Value < modEpoch) {
           setTimeout(function() {
             var param = {
-              SnapshotId: snapShot.SnapshotId,
+              SnapshotId: snapshot.SnapshotId,
               DryRun: false
             };
 
             ec2.deleteSnapshot(param, function(err, data) {
               if (err) { return cb(err); }
               else {
-                purgeDebug('Deleted Snapshot with ID: ', snapShot.SnapshotId);
+                purgeDebug('Deleted Snapshot with ID: ', snapshot.SnapshotId);
               }
             });
           }, timeout);
@@ -100,13 +100,13 @@ function _createTag(resources, tagName, tagValue, cb) {
   });
 }
 
-function _createSnapshots(snapShotTimerTag, cb) {
-  snapShotDebug('Creating Snapshot');
+function _createSnapshots(snapshotTimerTag, cb) {
+  snapshotDebug('Creating Snapshot');
   var modEpoch = (new Date()).getTime() / 1000;
   var params = {
     DryRun: false,
     Filters: [
-      {Name: 'tag-key', Values: [snapShotTimerTag]}
+      {Name: 'tag-key', Values: [snapshotTimerTag]}
     ]
   };
 
@@ -115,13 +115,13 @@ function _createSnapshots(snapShotTimerTag, cb) {
     _.each(data.Volumes, function(volume) {
       var params = {
         VolumeId: volume.VolumeId,
-        Description: snapShotTimerTag + ' - ' + modEpoch,
+        Description: snapshotTimerTag + ' - ' + modEpoch,
         DryRun: false
       };
-      ec2.createSnapshot(params, function(err, snapShotData) {
+      ec2.createSnapshot(params, function(err, snapshotData) {
         if (err) {return cb(err)}
-        snapShotDebug('ReturnData', snapShotData);
-        _createTag(snapShotData.SnapshotId, 'Name', volume.VolumeId)
+        snapshotDebug('ReturnData', snapshotData);
+        _createTag(snapshotData.SnapshotId, 'Name', volume.VolumeId)
       });
 
     });
@@ -140,8 +140,8 @@ function _handleErrorAndExit(err) {
 // Main processing logic...
 
 function _start() {
-  if (options.snapShotTimerTag) {
-    _createSnapshots(options.snapShotTimerTag, function(err) {
+  if (options.snapshotTimerTag) {
+    _createSnapshots(options.snapshotTimerTag, function(err) {
       if (err) {return _handleError(err); }
     });
   }
