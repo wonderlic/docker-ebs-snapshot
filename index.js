@@ -27,7 +27,7 @@ AWS.config.update({
 var ec2 = new AWS.EC2();
 
 function _purgeExpiredSnapshots(throttleRate, cb) {
-  purgeDebug('Starting Purge');
+  console.log('Starting Purge');
 
   var params = {
     DryRun: false,
@@ -52,7 +52,7 @@ function _purgeExpiredSnapshots(throttleRate, cb) {
             ec2.deleteSnapshot(param, function(err, data) {
               if (err) { return cb(err); }
 
-              purgeDebug('Deleted Snapshot with ID: %s', snapshot.SnapshotId);
+              console.log('Deleted Snapshot with ID: %s', snapshot.SnapshotId);
             });
           }, timeout);
           timeout = timeout + throttleRate;//throttle the deletes so AWS doesn't error on over limit
