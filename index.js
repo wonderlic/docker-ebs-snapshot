@@ -118,6 +118,7 @@ function _createSnapshots(snapshotTag, purgeAfter, errorHandler) {
       };
       snapshotDebug('volume: %o', volume);
 
+      // TODO... catch errors and retry
       ec2.createSnapshot(params, function(err, snapshot) {
         snapshotDebug('ec2.createSnapshot err: %o, snapshot: %o', err, snapshot);
         if (err) { return errorHandler(err); }
