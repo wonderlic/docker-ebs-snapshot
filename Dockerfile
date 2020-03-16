@@ -1,11 +1,11 @@
-FROM wonderlic/node:lts-10-build as build
+FROM wonderlic/node:10-alpine-builder as build
 
 WORKDIR /build
-COPY package.json ./
-RUN npm install --only=production
+COPY package.json package-lock.json ./
+RUN npm ci --only=production
 
 #---------------------------------------------------------------------
-FROM wonderlic/node:lts-10-runtime
+FROM wonderlic/node:10-alpine
 LABEL maintainer="Wonderlic DevOps <DevOps@wonderlic.com>"
 
 WORKDIR /app
