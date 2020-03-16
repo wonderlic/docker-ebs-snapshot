@@ -92,16 +92,19 @@ async function _createSnapshots(snapshotTag, purgeAfter, copyTo) {
 
   const volumes = await ec2.listVolumesWithTag(snapshotTag);
   for (const volume of volumes) {
+    const shouldSnapshot = getTagValue(volume.Tags, snapshotTag);
+    if (shouldSnapshot === 'true') {
 
-    const volumeName = getTagValue(volume.Tags, 'Name');
-    const snapshot = await ec2.createSnapshot(volume.VolumeId, `${snapshotTag} - ${timestamp}`);
-    await _applyTagsToSnapshot(snapshot.SnapshotId, volumeName, purgeAfterFE);
-    console.log('Created snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
-
-    if (copyTo) {
-      const clonedSnapshot = await ec2.copySnapshot(snapshot.SnapshotId, process.env.AWS_DEFAULT_REGION, copyTo, `CLONE: ${snapshotTag} - ${timestamp}`);
+      const volumeName = getTagValue(volume.Tags, 'Name');
+      const snapshot = await ec2.createSnapshot(volume.VolumeId, `${snapshotTag} - ${timestamp}`);
       await _applyTagsToSnapshot(snapshot.SnapshotId, volumeName, purgeAfterFE);
-      console.log('Cloned snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, clonedSnapshot.SnapshotId);
+      console.log('Created snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
+
+      if (copyTo) {
+        const clonedSnapshot = await ec2.copySnapshot(snapshot.SnapshotId, process.env.AWS_DEFAULT_REGION, copyTo, `CLONE: ${snapshotTag} - ${timestamp}`);
+        await _applyTagsToSnapshot(snapshot.SnapshotId, volumeName, purgeAfterFE);
+        console.log('Cloned snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, clonedSnapshot.SnapshotId);
+      }
     }
   }
 }
