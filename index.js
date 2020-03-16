@@ -10,15 +10,13 @@ const purgeDebug = debug('purge');
 const tagDebug = debug('tag');
 const snapshotDebug = debug('snapshot');
 
-const cli = commandLineArgs([
+const options = commandLineArgs([
   {name: 'purge', description: 'If set, purge any expired snapshots.', alias: 'p', type: Boolean, defaultOption: false},
   {name: 'snapshotTag', description: 'If set, create snapshots for any volumes matching this tag.', alias: 's', type: String},
   {name: 'purgeAfter', description: 'If set (in hours), add the PurgeAfterFE tag to any snapshots created.', alias: 'k', type: Number},
   {name: 'copyTo', description: 'If set, copy any snapshots created to this destination region.', alias: 'c', type: String},
   {name: 'throttle', description: 'If set, override the time delay (in milliseconds) between each purge request.', alias: 't', type: Number, defaultValue: 250}
 ]);
-
-const options = cli.parse();
 optionsDebug('options %o', options);
 
 const ec2 = new AwsEC2Service({
@@ -38,7 +36,7 @@ function getTimestamp() {
 }
 
 function getTagValue(tags, name) {
-  const tag = _.find(tags, {key: name});
+  const tag = _.find(tags, {Key: name});
   if (tag) {
     return tag.Value;
   }
@@ -69,7 +67,7 @@ async function _applyTagsToSnapshot(snapshotId, volumeName, purgeAfterFE) {
   if (volumeName) {
     tags.push({Key: 'Name', Value: volumeName});
   }
-  if (purgeAfter > 0) {
+  if (purgeAfterFE > 0) {
     tags.push({Key: 'PurgeAllow', Value: 'true'});
     tags.push({Key: 'PurgeAfterFE', Value: purgeAfterFE.toString()});
   }
@@ -122,4 +120,6 @@ async function main() {
 }
 
 main()
-  .catch(console.error);
+  .catch(err => {
+    console.log(err);
+  });

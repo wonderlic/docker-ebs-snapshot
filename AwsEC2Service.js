@@ -7,7 +7,7 @@ function AwsEC2Service(credentials) {
 }
 
 AwsEC2Service.prototype.listVolumesWithTag = async function(tagName) {
-  const response = await ec2.describeVolumes({
+  const response = await this._ec2.describeVolumes({
     Filters: [
       {Name: 'tag-key', Values: [tagName]}
     ]
@@ -16,23 +16,25 @@ AwsEC2Service.prototype.listVolumesWithTag = async function(tagName) {
 };
 
 AwsEC2Service.prototype.createSnapshot = async function(volumeId, description) {
-  return ec2.createSnapshot({
+  return this._ec2.createSnapshot({
     VolumeId: volumeId,
-    Description: description
+    Description: description,
+    DryRun: false
   });
 };
 
 AwsEC2Service.prototype.copySnapshot = async function(snapshotId, sourceRegion, destinationRegion, description) {
-  return ec2.copySnapshot({
+  return this._ec2.copySnapshot({
     SourceSnapshotId: snapshotId,
     SourceRegion: sourceRegion,
     DestinationRegion: destinationRegion,
-    Description: description
+    Description: description,
+    DryRun: false
   });
 };
 
 AwsEC2Service.prototype.listSnapshotsWithTag = async function(tagName) {
-  const response = await ec2.describeSnapshots({
+  const response = await this._ec2.describeSnapshots({
     Filters: [
       {Name: 'tag-key', Values: [tagName]}
     ]
@@ -41,15 +43,17 @@ AwsEC2Service.prototype.listSnapshotsWithTag = async function(tagName) {
 };
 
 AwsEC2Service.prototype.deleteSnapshot = async function(snapshotId) {
-  return ec2.deleteSnapshot({
-    SnapshotId: snapshotId
+  return this._ec2.deleteSnapshot({
+    SnapshotId: snapshotId,
+    DryRun: false
   });
 };
 
 AwsEC2Service.prototype.createTags = async function(resources, tags) {
-  return ec2.createTags({
+  return this._ec2.createTags({
     Resources: [].concat(resources),
-    Tags: tags
+    Tags: tags,
+    DryRun: false
   });
 };
 
