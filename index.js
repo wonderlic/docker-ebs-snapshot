@@ -1,177 +1,117 @@
-var _ = require('lodash');
-var AWS = require('aws-sdk');
-var commandLineArgs = require('command-line-args');
-var debug = require('debug');
+const _ = require('lodash');
+const commandLineArgs = require('command-line-args');
+const debug = require('debug');
+
+const AwsEC2Service = require('./AwsEC2Service.js');
 
 //---Debug Options
-var optionsDebug = debug('options');
-var purgeDebug = debug('purge');
-var tagDebug = debug('tag');
-var snapshotDebug = debug('snapshot');
+const optionsDebug = debug('options');
+const purgeDebug = debug('purge');
+const tagDebug = debug('tag');
+const snapshotDebug = debug('snapshot');
 
-var cli = commandLineArgs([
+const cli = commandLineArgs([
   {name: 'purge', description: 'If set, purge any expired snapshots.', alias: 'p', type: Boolean, defaultOption: false},
   {name: 'snapshotTag', description: 'If set, create snapshots for any volumes matching this tag.', alias: 's', type: String},
   {name: 'purgeAfter', description: 'If set (in hours), add the PurgeAfterFE tag to any snapshots created.', alias: 'k', type: Number},
-  {name: 'throttle', description: 'If set, override the time delay between each purge request.', alias: 't', type: Number, defaultValue: 250}
+  {name: 'copyTo', description: 'If set, copy any snapshots created to this destination region.', alias: 'c', type: String},
+  {name: 'throttle', description: 'If set, override the time delay (in milliseconds) between each purge request.', alias: 't', type: Number, defaultValue: 250}
 ]);
 
-var options = cli.parse();
+const options = cli.parse();
 optionsDebug('options %o', options);
 
-AWS.config.update({
+const ec2 = new AwsEC2Service({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   region: process.env.AWS_DEFAULT_REGION
 });
 
-var ec2 = new AWS.EC2();
+function sleep(ms) {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
 
-function _purgeExpiredSnapshots(throttleRate, errorHandler) {
+async function _purgeExpiredSnapshots(throttleDelay) {
   console.log('Purging expired snapshots');
-
-  var params = {
-    DryRun: false,
-    Filters: [
-      {Name: 'tag-key', Values: ['PurgeAllow']}
-    ]
-  };
-
-  ec2.describeSnapshots(params, function(err, data) {
-    if (err) { return errorHandler(err); }
-
-    var modEpoch = Math.floor((new Date()).getTime() / 1000);
-    var timeout = 0;
-    // TODO... look into using async.eachSeries with a delay instead of setTimeout
-    _.each(data.Snapshots, function(snapshot) {
-      _.each(snapshot.Tags, function(tag) {
-        if (tag.Key === 'PurgeAfterFE' && tag.Value < modEpoch) {
-          var garbageCollectMe = setTimeout(function() {
-            var param = {
-              SnapshotId: snapshot.SnapshotId,
-              DryRun: false
-            };
-
-            ec2.deleteSnapshot(param, function(err, data) {
-              if (err) { return errorHandler(err); }
-
-              console.log('Deleted expired SnapshotId: %s', snapshot.SnapshotId);
-            });
-          }, timeout);
-          timeout = timeout + throttleRate;//throttle the deletes so AWS doesn't error on over limit
-        }
-      });
-    });
-  });
-}
-
-function _createTags(resources, tags, errorHandler) {
-  tagDebug('_createTags resources: %o, tags: %o', resources, tags);
-
-  if (!_.isArray(resources)) {
-    tagDebug('Converting to array');
-    var resourcesString = resources;
-    resources = [];
-    resources[0] = resourcesString;
-  }
-
-  var params = {
-    Resources: resources,
-    Tags: tags,
-    DryRun: false
-  };
-
-  tagDebug('params: %o', params);
-
-  ec2.createTags(params, function(err, data) {
-    snapshotDebug('.createTags err: %o, data: %o', err, data);
-    if (err) { return errorHandler(err); }
-  });
-}
-
-function _createSnapshots(snapshotTag, purgeAfter, errorHandler) {
-  console.log('Creating snapshots for volumes with tag: %s', snapshotTag);
 
   var modEpoch = Math.floor((new Date()).getTime() / 1000);
 
-  var purgeAfterFE = 0;
+  const snapshots = await ec2.listSnapshotsWithTag('PurgeAllow');
+  for (const snapshot of snapshots) {
+
+    const purgeAfterFE = _getTagValue(snapshot.Tags, 'PurgeAfterFE');
+    if (purgeAfterFE && purgeAfterFE < modEpoch ) {
+      await ec2.deleteSnapshot(snapshot.SnapshotId);
+      console.log('Deleted expired SnapshotId: %s', snapshot.SnapshotId);
+
+      await sleep(throttleDelay); // Throttle the deletes so AWS doesn't error on over limit
+    }
+  }
+}
+
+async function _applyTagsToSnapshot(snapshotId, volumeName, purgeAfterFE) {
+  const tags = [];
+
+  if (volumeName) {
+    tags.push({Key: 'Name', Value: volumeName});
+  }
+  if (purgeAfter > 0) {
+    tags.push({Key: 'PurgeAllow', Value: 'true'});
+    tags.push({Key: 'PurgeAfterFE', Value: purgeAfterFE.toString()});
+  }
+
+  if (tags.length > 0) {
+    await ec2.createTags(snapshotId, tags);
+  }
+}
+
+async function _createSnapshots(snapshotTag, purgeAfter, copyTo) {
+  console.log('Creating snapshots for volumes with tag: %s', snapshotTag);
+
+  const modEpoch = Math.floor((new Date()).getTime() / 1000);
+
+  let purgeAfterFE = 0;
   if (purgeAfter > 0) {
     purgeAfterFE = modEpoch + (purgeAfter * 60 * 60);
     console.log('Allow snapshots to be purged after %d hours (%d)', purgeAfter, purgeAfterFE);
   }
 
-  var params = {
-    DryRun: false,
-    Filters: [
-      {Name: 'tag-key', Values: [snapshotTag]}
-    ]
-  };
+  const volumes = await ec2.listVolumesWithTag(snapshotTag);
+  for (const volume of volumes) {
 
-  ec2.describeVolumes(params, function(err, data) {
-    if (err) { return errorHandler(err); }
+    const volumeName = _getTagValue(volume.Tags, 'Name');
+    const snapshot = await ec2.createSnapshot(volume.VolumeId, `${snapshotTag} - ${modEpoch}`);
+    await _applyTagsToShapshot(snapshot.SnapshotId, volumeName, purgeAfterFE);
+    console.log('Created snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
 
-    _.each(data.Volumes, function(volume) {
-      var params = {
-        VolumeId: volume.VolumeId,
-        Description: snapshotTag + ' - ' + modEpoch,
-        DryRun: false
-      };
-      snapshotDebug('volume: %o', volume);
-
-      // TODO... catch errors and retry
-      ec2.createSnapshot(params, function(err, snapshot) {
-        snapshotDebug('ec2.createSnapshot err: %o, snapshot: %o', err, snapshot);
-        if (err) { return errorHandler(err); }
-
-        var volumeName = _getTagValue(volume.Tags, 'Name');
-
-        var tags = [];
-        if (volumeName) {
-          tags.push({Key: 'Name', Value: volumeName});
-        }
-        if (purgeAfter > 0) {
-          tags.push({Key: 'PurgeAllow', Value: 'true'});
-          tags.push({Key: 'PurgeAfterFE', Value: purgeAfterFE.toString()});
-        }
-
-        if (tags.length > 0) {
-          _createTags(snapshot.SnapshotId, tags, errorHandler);
-        }
-
-        console.log('Created snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
-      });
-    });
-  });
-}
-
-function _getTagValue(tags, name) {
-  for (var i = 0; i < tags.length; i++) {
-    var tag = tags[i];
-    if (tag.Key === name) {
-      return tag.Value;
+    if (copyTo) {
+      const clonedSnapshot = await ec2.copySnapshot(snapshot.SnapshotId, process.env.AWS_DEFAULT_REGION, copyTo, `CLONE: ${snapshotTag} - ${modEpoch}`);
+      await _applyTagsToShapshot(snapshot.SnapshotId, volumeName, purgeAfterFE);
+      console.log('Cloned snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, clonedSnapshot.SnapshotId);
     }
   }
 }
 
-function _handleError(err) {
-  console.error(err);
-}
-
-function _handleErrorAndExit(err) {
-  console.error(err);
-  process.exit(1);
+function _getTagValue(tags, name) {
+  const tag = _.find(tags, {key: name});
+  if (tag) {
+    return tag.Value;
+  }
 }
 
 // Main processing logic...
 
-function _start() {
+async function main() {
   if (options.snapshotTag) {
-    _createSnapshots(options.snapshotTag, options.purgeAfter, _handleError);
+    await _createSnapshots(options.snapshotTag, options.purgeAfter, options.copyTo);
   }
 
   if (options.purge) {
-    _purgeExpiredSnapshots(options.throttle, _handleError);
+    await _purgeExpiredSnapshots(options.throttle);
   }
 }
 
-_start();
+main()
+  .catch(console.error);
