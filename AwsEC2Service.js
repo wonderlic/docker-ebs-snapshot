@@ -23,6 +23,15 @@ AwsEC2Service.prototype.createSnapshot = async function(volumeId, description) {
   });
 };
 
+AwsEC2Service.prototype.getSnapshot = async function(snapshotId) {
+  const response = await this._ec2.describeSnapshots({
+    Filters: [
+      {Name: 'snapshot-id', Values: [snapshotId]}
+    ]
+  });
+  return _.first(response.Snapshots);
+};
+
 AwsEC2Service.prototype.copySnapshot = async function(snapshotId, sourceRegion, destinationRegion, description) {
   return this._ec2.copySnapshot({
     SourceSnapshotId: snapshotId,

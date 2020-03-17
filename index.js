@@ -25,6 +25,15 @@ const ec2 = new AwsEC2Service({
   region: process.env.AWS_DEFAULT_REGION
 });
 
+let ec2_dest;
+if (options.copyTo) {
+  ec2_dest = new AwsEC2Service({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: options.copyTo
+  });
+}
+
 function sleep(ms) {
   return new Promise(resolve => {
     setTimeout(resolve, ms);
@@ -61,22 +70,6 @@ async function _purgeExpiredSnapshots(throttleDelay) {
   }
 }
 
-async function _applyTagsToSnapshot(snapshotId, volumeName, purgeAfterFE) {
-  const tags = [];
-
-  if (volumeName) {
-    tags.push({Key: 'Name', Value: volumeName});
-  }
-  if (purgeAfterFE > 0) {
-    tags.push({Key: 'PurgeAllow', Value: 'true'});
-    tags.push({Key: 'PurgeAfterFE', Value: purgeAfterFE.toString()});
-  }
-
-  if (tags.length > 0) {
-    await ec2.createTags(snapshotId, tags);
-  }
-}
-
 async function _createSnapshots(snapshotTag, purgeAfter, copyTo) {
   console.log('Creating snapshots for volumes with tag: %s', snapshotTag);
 
@@ -94,14 +87,40 @@ async function _createSnapshots(snapshotTag, purgeAfter, copyTo) {
     if (shouldSnapshot === 'true') {
 
       const volumeName = getTagValue(volume.Tags, 'Name');
-      const snapshot = await ec2.createSnapshot(volume.VolumeId, `${snapshotTag} - ${timestamp}`);
-      await _applyTagsToSnapshot(snapshot.SnapshotId, volumeName, purgeAfterFE);
+
+      const tags = [];
+      if (volumeName) {
+        tags.push({Key: 'Name', Value: volumeName});
+      }
+      if (purgeAfterFE > 0) {
+        tags.push({Key: 'PurgeAllow', Value: 'true'});
+        tags.push({Key: 'PurgeAfterFE', Value: purgeAfterFE.toString()});
+      }
+
+      let snapshot = await ec2.createSnapshot(volume.VolumeId, `${snapshotTag} - ${timestamp}`);
+      if (tags) {
+        await ec2.createTags(snapshot.SnapshotId, tags);
+      }
       console.log('Created snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
 
       if (copyTo) {
-        const clonedSnapshot = await ec2.copySnapshot(snapshot.SnapshotId, process.env.AWS_DEFAULT_REGION, copyTo, `CLONE: ${snapshotTag} - ${timestamp}`);
-        await _applyTagsToSnapshot(snapshot.SnapshotId, volumeName, purgeAfterFE);
-        console.log('Cloned snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, clonedSnapshot.SnapshotId);
+        console.log('Waiting for snapshot to complete for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshot.SnapshotId);
+
+        const snapshotId = snapshot.SnapshotId;
+        while (snapshot.State === 'pending') {
+          await sleep(500);
+          snapshot = await ec2.getSnapshot(snapshotId);
+        }
+
+        if (snapshot.State === 'completed') {
+          const clonedSnapshot = await ec2_dest.copySnapshot(snapshot.SnapshotId, process.env.AWS_DEFAULT_REGION, copyTo, `${snapshotTag} - ${timestamp} [Copied ${snapshotId} from ${process.env.AWS_DEFAULT_REGION}]`);
+          if (tags) {
+            await ec2_dest.createTags(clonedSnapshot.SnapshotId, tags);
+          }
+          console.log('Cloned snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, clonedSnapshot.SnapshotId);
+        } else {
+          console.log('Could not clone errored snapshot for VolumeId: %s SnapshotId: %s', volumeName ? volume.VolumeId + ' (' + volumeName + ')' : volume.VolumeId, snapshotId);
+        }
       }
     }
   }
