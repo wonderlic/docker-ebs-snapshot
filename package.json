@@ -6,7 +6,7 @@
   "dependencies": {
     "aws-sdk": "2.640.0",
     "command-line-args": "5.1.1",
-    "debug": "2.2.0",
+    "debug": "2.6.9",
     "lodash": "^4.17.15"
   }
 }
